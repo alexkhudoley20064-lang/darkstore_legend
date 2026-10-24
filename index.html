@@ -28,6 +28,10 @@
       margin: 0;
       padding: 0;
       overflow: hidden;
+      overscroll-behavior: none;
+      overscroll-behavior-y: none;
+      position: fixed;
+      width: 100%;
       background-color: #030712;
       color: #f8fafc;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -150,9 +154,25 @@
   <div id="root" class="w-full max-w-md h-full"></div>
 
   <script type="text/babel">
+    // 1. ФИКСАЦИЯ ПРИЛОЖЕНИЯ В TELEGRAM (ЗАПРЕТ СВОРАЧИВАНИЯ)
+    if (window.Telegram?.WebApp) {
+      const tg = window.Telegram.WebApp;
+      tg.ready();
+      tg.expand();
+      if (tg.disableVerticalSwipes) {
+        tg.disableVerticalSwipes();
+      }
+    }
+
+    document.addEventListener('touchmove', (e) => {
+      if (!e.target.closest('.overflow-y-auto')) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+
     const { useState, useEffect, useRef } = React;
 
-    // 1. КАТАЛОГ ТОВАРОВ — НА САМОМ ВЕРХУ СКРИПТА
+    // 2. КАТАЛОГ ТОВАРОВ
     const PRODUCTS = [
       // Бакалея
       { id: 'grain', name: 'Крупа', department: 'dry', price: 89, weight: 0.8, aspect: 'tall' },
@@ -186,7 +206,7 @@
     ];
     window.PRODUCTS = PRODUCTS;
 
-    // 2. ПОДКЛЮЧЕНИЕ К SUPABASE
+    // 3. ПОДКЛЮЧЕНИЕ К SUPABASE
     const SUPABASE_URL = "https://fmzgvxvzvcbyidblscfb.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZtemd2eHZ6dmNieWlkYmxzY2ZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2OTA0MDEsImV4cCI6MjEwODI2NjQwMX0.H22tqDARAsEcNnAQ25F-6VZmPlozRpB9zQz8N4JmZqI";
     
@@ -194,7 +214,8 @@
       ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
       : null;
 
-    const getPlayerName = () => {
+    // Начальное имя игрока (из Telegram или профиля)
+    const getDefaultPlayerName = () => {
       try {
         const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
         if (tgUser) {
@@ -210,7 +231,7 @@
       return savedName;
     };
 
-    // СИНТЕЗАТОР ЗВУКОВ СКАНЕРА (Web Audio API)
+    // ЗВУКОВОЙ ДВИЖОК
     class SoundEngine {
       constructor() {
         this.ctx = null;
@@ -566,7 +587,7 @@
       );
     };
 
-    // 3. ФУНКЦИЯ ProductIcon (ЕДИНСТВЕННЫЙ ЭКЗЕМПЛЯР)
+    // 4. КОМПОНЕНТ ProductIcon
     const ProductIcon = ({ id, aspect = 'medium', sizeOverride }) => {
       let width = 42;
       let height = 42;
@@ -876,7 +897,7 @@
       }
     };
 
-    // 4. ГЕНЕРАТОР ЗАКАЗОВ
+    // 5. ГЕНЕРАТОР ЗАКАЗОВ
     function generateOrder(orderNum) {
       const orderId = `24${String(Math.floor(Math.random() * 899999 + 100000))}`;
       let distinctCount = 2;
@@ -903,7 +924,7 @@
       return { id: orderId, items };
     }
 
-    // 5. ТОВАР НА ПОЛКЕ
+    // 6. ТОВАР НА ПОЛКЕ
     const ProductItem = ({ product, onTap, isShaking, isSuccess, isLaserScanning }) => {
       return (
         <button
@@ -930,11 +951,15 @@
       );
     };
 
-    // 6. ГЛАВНОЕ ПРИЛОЖЕНИЕ (App)
+    // 7. ГЛАВНОЕ ПРИЛОЖЕНИЕ (App)
     function App() {
       const [screen, setScreen] = useState('start');
       const [timeLeft, setTimeLeft] = useState(90);
       const [score, setScore] = useState(0);
+
+      // ИМЯ ИГРОКА (С ВОЗМОЖНОСТЬЮ РЕДАКТИРОВАНИЯ)
+      const [playerName, setPlayerName] = useState(() => getDefaultPlayerName());
+
       const [totalExp, setTotalExp] = useState(() => {
         try { return parseInt(localStorage.getItem('shop_total_exp') || '0', 10); } catch { return 0; }
       });
@@ -969,6 +994,13 @@
       const touchStartX = useRef(0);
       const rankInfo = getRankInfo(totalExp);
 
+      // Изменение никнейма
+      const handleNameChange = (e) => {
+        const val = e.target.value.slice(0, 20);
+        setPlayerName(val);
+        localStorage.setItem('darkstore_player_name', val);
+      };
+
       const loadOnlineLeaderboard = async () => {
         setIsLoadingLeaders(true);
         if (!supabase) {
@@ -999,7 +1031,7 @@
       const sendScoreToSupabase = async (finalScore, ordersCount, currentRankTitle) => {
         if (!supabase || finalScore <= 0) return;
         try {
-          const name = getPlayerName();
+          const name = playerName.trim() || getDefaultPlayerName();
           await supabase.from('shop_leaderboard').insert([{
             player_name: name,
             score: finalScore,
@@ -1201,7 +1233,7 @@
           : 100;
 
         return (
-          <div className="flex flex-col justify-between h-full p-5 text-center select-none bg-slate-950 box-border relative">
+          <div className="flex flex-col justify-between h-full p-4 text-center select-none bg-slate-950 box-border relative overflow-y-auto">
             
             {/* МОДАЛКА: СВОД ПРАВИЛ */}
             {showRulesModal && (
@@ -1430,16 +1462,30 @@
 
             {/* ГЛАВНОЕ МЕНЮ */}
             <div className="flex-1 flex flex-col items-center justify-center pt-2">
-              <div className="mb-2 animate-bounce flex items-center justify-center drop-shadow-[0_0_16px_rgba(21,160,70,0.5)]">
-                <TsdDeviceSvg size={64} />
+              <div className="mb-1.5 animate-bounce flex items-center justify-center drop-shadow-[0_0_16px_rgba(21,160,70,0.5)]">
+                <TsdDeviceSvg size={60} />
               </div>
 
               <h1 className="text-2xl font-black tracking-tight text-white uppercase">Легенда Даркстора</h1>
               
+              {/* ПОЛЕ ВВОДА НИКНЕЙМА */}
+              <div className="mt-2.5 w-full max-w-xs bg-slate-900/90 px-3 py-2 rounded-xl border border-slate-800 flex items-center gap-2">
+                <span className="text-xs text-slate-400 font-bold shrink-0">👤 Никнейм:</span>
+                <input
+                  type="text"
+                  value={playerName}
+                  onChange={handleNameChange}
+                  placeholder="Введи позывной"
+                  maxLength={20}
+                  className="flex-1 bg-slate-800/80 text-white font-black text-xs px-2.5 py-1.5 rounded-lg border border-slate-700 focus:outline-none focus:border-[#15A046] transition-colors"
+                />
+              </div>
+
+              {/* КАРТОЧКА РАНГА */}
               <button 
                 type="button"
                 onClick={() => setShowRanksModal(true)}
-                className="mt-3 w-full max-w-xs bg-slate-900/90 p-3 rounded-2xl border-2 border-[#15A046] pyaterochka-glow text-left cursor-pointer active:scale-98 transition-transform"
+                className="mt-2 w-full max-w-xs bg-slate-900/90 p-3 rounded-2xl border-2 border-[#15A046] pyaterochka-glow text-left cursor-pointer active:scale-98 transition-transform"
               >
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-[10px] uppercase font-bold text-slate-300">Твой ранг:</span>
@@ -1462,12 +1508,12 @@
                   </div>
                 )}
                 <div className="mt-1.5 text-[8px] text-[#15A046] font-bold text-right uppercase tracking-wider">
-                  Нажми, чтобы открыть все ранги ↗
+                  Открыть все 10 рангов ↗
                 </div>
               </button>
 
               {/* КНОПКИ: ОНЛАЙН ТОП-10 И ПРАВИЛА */}
-              <div className="mt-2.5 grid grid-cols-2 gap-2 w-full max-w-xs">
+              <div className="mt-2 grid grid-cols-2 gap-2 w-full max-w-xs">
                 <button
                   type="button"
                   onClick={() => {
@@ -1496,11 +1542,11 @@
               </div>
             </div>
 
-            <div className="pb-5 pt-2">
+            <div className="pb-4 pt-1">
               <button
                 type="button"
                 onClick={startGame}
-                className="w-full py-4 pyaterochka-green hover:brightness-110 active:brightness-90 text-white font-black text-sm uppercase tracking-wider rounded-2xl pyaterochka-glow active:scale-95 transition-transform cursor-pointer"
+                className="w-full py-3.5 pyaterochka-green hover:brightness-110 active:brightness-90 text-white font-black text-sm uppercase tracking-wider rounded-2xl pyaterochka-glow active:scale-95 transition-transform cursor-pointer"
               >
                 Выйти на смену
               </button>
@@ -1513,10 +1559,10 @@
       if (screen === 'results') {
         const isNewRecord = score >= highScore && score > 0;
         return (
-          <div className="flex flex-col justify-between h-full p-6 text-center select-none bg-slate-950 box-border">
-            <div className="flex-1 flex flex-col items-center justify-center w-full pt-4">
+          <div className="flex flex-col justify-between h-full p-5 text-center select-none bg-slate-950 box-border">
+            <div className="flex-1 flex flex-col items-center justify-center w-full pt-2">
               <div className="mb-1 drop-shadow-[0_0_12px_rgba(255,255,255,0.4)]">
-                <FinishFlagSvg size={52} />
+                <FinishFlagSvg size={50} />
               </div>
 
               <h2 className="text-2xl font-black text-white">Смена сдана!</h2>
@@ -1547,11 +1593,11 @@
               </div>
             </div>
 
-            <div className="pb-6 pt-2 space-y-2">
+            <div className="pb-5 pt-1 space-y-2">
               <button
                 type="button"
                 onClick={shareToTelegram}
-                className="w-full py-3.5 bg-[#1D4ED8] hover:bg-[#1E40AF] active:bg-[#172554] text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-[0_0_16px_rgba(29,78,216,0.55)] border border-blue-400/30 active:scale-95 transition-transform flex items-center justify-center gap-2"
+                className="w-full py-3 bg-[#1D4ED8] hover:bg-[#1E40AF] active:bg-[#172554] text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-[0_0_16px_rgba(29,78,216,0.55)] border border-blue-400/30 active:scale-95 transition-transform flex items-center justify-center gap-2"
               >
                 <PaperPlaneSvg size={14} />
                 <span>Поделиться сменой</span>
@@ -1560,7 +1606,7 @@
               <button
                 type="button"
                 onClick={startGame}
-                className="w-full py-3.5 pyaterochka-green hover:brightness-110 text-white font-black text-xs uppercase tracking-wider rounded-xl pyaterochka-glow active:scale-95 transition-transform"
+                className="w-full py-3 pyaterochka-green hover:brightness-110 text-white font-black text-xs uppercase tracking-wider rounded-xl pyaterochka-glow active:scale-95 transition-transform"
               >
                 Новая смена
               </button>
@@ -1614,7 +1660,7 @@
                 </div>
                 <h3 className="text-sm font-black text-white uppercase">Завершить смену?</h3>
                 <p className="text-[10px] text-slate-400 mt-1 mb-4">
-                  Набранные очки ({score}) сохранятся и отправятся в таблицу лидеров.
+                  Очки ({score}) пойдут в онлайн-таблицу рекордов и опыт ранга.
                 </p>
                 <div className="space-y-2 w-full">
                   <button
@@ -1648,7 +1694,7 @@
             </div>
           )}
 
-          {/* 1. ВЕРХНЕЕ МЕНЮ С КНОПКОЙ ВЫХОДА ✕ */}
+          {/* 1. ВЕРХНЕЕ МЕНЮ */}
           <header className="z-30 px-2.5 pt-2 pb-1.5 flex items-center justify-between gap-1.5 bg-gradient-to-b from-slate-900 to-slate-950 border-b border-slate-800 shadow-md box-border w-full">
             <div className={`px-2 py-1 rounded-lg font-mono font-black text-xs flex items-center gap-1 border shrink-0 ${
               isCritical ? 'bg-red-500/20 text-red-400 border-red-500/50 animate-pulse' : 'bg-slate-800 text-slate-100 border-slate-700'
