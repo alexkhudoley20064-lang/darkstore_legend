@@ -1238,13 +1238,18 @@
         }
       };
 
-      const shareToTelegram = () => {
+     const shareToTelegram = () => {
         const text = encodeURIComponent(
           `🛒 Сдал смену в «Легенде Даркстора»!\n📦 Заказов: ${ordersCompleted}\n⭐ Счёт: ${score}\n🎖 Ранг: ${rankInfo.current.title}\nПопробуй обогнать меня!`
         );
-        window.open(`https://t.me/share/url?url=https://t.me&text=${text}`, '_blank');
-      };
+        const shareUrl = `https://t.me/share/url?url=https://t.me/lekkzhubBot&text=${text}`;
 
+        if (window.Telegram?.WebApp?.openTelegramLink) {
+          window.Telegram.WebApp.openTelegramLink(shareUrl);
+        } else {
+          window.open(shareUrl, '_blank');
+        }
+      };
       const orderWeight = currentOrder ? currentOrder.items.reduce((acc, item) => {
         const p = PRODUCTS.find(x => x.id === item.productId);
         return acc + (p ? p.weight * item.targetCount : 0);
